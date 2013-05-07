@@ -1,10 +1,13 @@
 package com.hubspot.dropwizard.guice;
 
+import java.lang.annotation.Annotation;
+import java.lang.reflect.Modifier;
 import java.util.Set;
 
 import javax.ws.rs.Path;
 import javax.ws.rs.ext.Provider;
 
+import com.google.common.collect.Sets;
 import com.yammer.dropwizard.Bundle;
 import com.yammer.dropwizard.config.Bootstrap;
 import org.reflections.Reflections;
@@ -32,7 +35,6 @@ public class AutoConfig {
 
 	public AutoConfig(String... basePackages) {
 		Preconditions.checkArgument(basePackages.length > 0);
-		
 		ConfigurationBuilder cfgBldr = new ConfigurationBuilder();
 		FilterBuilder filterBuilder = new FilterBuilder();
 		for (String basePkg : basePackages) {
@@ -41,7 +43,7 @@ public class AutoConfig {
 		}
 
 		cfgBldr.filterInputsBy(filterBuilder).setScanners(
-				new SubTypesScanner(), new TypeAnnotationsScanner());
+						new SubTypesScanner(), new TypeAnnotationsScanner());
 		this.reflections = new Reflections(cfgBldr);
 	}
 
@@ -59,8 +61,7 @@ public class AutoConfig {
 	}
 
 	private void addManaged(Environment environment, Injector injector) {
-		Set<Class<? extends Managed>> managedClasses = reflections
-				.getSubTypesOf(Managed.class);
+		Set<Class<? extends Managed>> managedClasses = findSubTypesOf(Managed.class);
 		for (Class<? extends Managed> managed : managedClasses) {
 			environment.manage(injector.getInstance(managed));
 			logger.info("Added managed: {}", managed);
@@ -68,8 +69,7 @@ public class AutoConfig {
 	}
 
 	private void addTasks(Environment environment, Injector injector) {
-		Set<Class<? extends Task>> taskClasses = reflections
-				.getSubTypesOf(Task.class);
+		Set<Class<? extends Task>> taskClasses = findSubTypesOf(Task.class);
 		for (Class<? extends Task> task : taskClasses) {
 			environment.addTask(injector.getInstance(task));
 			logger.info("Added task: {}", task);
@@ -77,8 +77,7 @@ public class AutoConfig {
 	}
 
 	private void addHealthChecks(Environment environment, Injector injector) {
-		Set<Class<? extends HealthCheck>> healthCheckClasses = reflections
-				.getSubTypesOf(HealthCheck.class);
+		Set<Class<? extends HealthCheck>> healthCheckClasses = findSubTypesOf(HealthCheck.class);
 		for (Class<? extends HealthCheck> healthCheck : healthCheckClasses) {
 			environment.addHealthCheck(injector.getInstance(healthCheck));
 			logger.info("Added healthCheck: {}", healthCheck);
@@ -87,9 +86,8 @@ public class AutoConfig {
 
 	@SuppressWarnings("rawtypes")
 	private void addInjectableProviders(Environment environment,
-			Injector injector) {
-		Set<Class<? extends InjectableProvider>> injectableProviders = reflections
-				.getSubTypesOf(InjectableProvider.class);
+																			Injector injector) {
+		Set<Class<? extends InjectableProvider>> injectableProviders = findSubTypesOf(InjectableProvider.class);
 		for (Class<? extends InjectableProvider> injectableProvider : injectableProviders) {
 			environment.addProvider(injectableProvider);
 			logger.info("Added injectableProvider: {}", injectableProvider);
@@ -97,8 +95,7 @@ public class AutoConfig {
 	}
 
 	private void addProviders(Environment environment, Injector injector) {
-		Set<Class<?>> providerClasses = reflections
-				.getTypesAnnotatedWith(Provider.class);
+		Set<Class<?>> providerClasses = findTypesAnnotatedWith(Provider.class);
 		for (Class<?> provider : providerClasses) {
 			environment.addProvider(provider);
 			logger.info("Added provider class: {}", provider);
@@ -106,8 +103,7 @@ public class AutoConfig {
 	}
 
 	private void addResources(Environment environment, Injector injector) {
-		Set<Class<?>> resourceClasses = reflections
-				.getTypesAnnotatedWith(Path.class);
+		Set<Class<?>> resourceClasses = findTypesAnnotatedWith(Path.class);
 		for (Class<?> resource : resourceClasses) {
 			environment.addResource(resource);
 			logger.info("Added resource class: {}", resource);
@@ -115,11 +111,32 @@ public class AutoConfig {
 	}
 
 	private void addBundles(Bootstrap<?> bootstrap, Injector injector) {
-		Set<Class<? extends Bundle>> bundleClasses = reflections
-				.getSubTypesOf(Bundle.class);
+		Set<Class<? extends Bundle>> bundleClasses = findSubTypesOf(Bundle.class);
 		for (Class<? extends Bundle> bundle : bundleClasses) {
 			bootstrap.addBundle(injector.getInstance(bundle));
 			logger.info("Added bundle class {} during bootstrap", bundle);
 		}
+	}
+
+	private <T> Set<Class<? extends T>> findSubTypesOf(Class<T> type) {
+		Set<Class<? extends T>> subTypes = reflections.getSubTypesOf(type);
+		return filterInterfacesAndAbstractClasses(subTypes);
+	}
+
+	private Set<Class<?>> findTypesAnnotatedWith(Class<? extends Annotation> annotation) {
+		Set<Class<?>> annotatedTypes = reflections.getTypesAnnotatedWith(annotation);
+		return filterInterfacesAndAbstractClasses(annotatedTypes);
+	}
+
+	private <T> Set<Class<? extends T>> filterInterfacesAndAbstractClasses(Set<Class<? extends T>> unfiltered) {
+		Set<Class<? extends T>> filtered = Sets.newHashSet();
+
+		for (Class<? extends T> type : unfiltered) {
+			if (!type.isInterface() && !Modifier.isAbstract(type.getModifiers())) {
+				filtered.add(type);
+			}
+		}
+
+		return filtered;
 	}
 }
